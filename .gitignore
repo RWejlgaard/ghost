@@ -1,0 +1,16 @@
+.venv/
+venv/
+.env
+build/
+dist/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
+*.pyzw
+
+__pycache__/
+
+ghost.spec
