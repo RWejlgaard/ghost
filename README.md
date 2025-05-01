@@ -1,6 +1,6 @@
 # Ghost 👻
 
-A CLI tool inspired by Ghost in the Shell that uses AI to execute and chain commands on your behalf.
+A CLI tool that uses AI to execute and chain commands on your behalf.
 
 ## Setup
 
