@@ -1,0 +1,128 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Triggers on version tags like v1.0.0, v2.1.3, etc.
+
+jobs:
+  build-and-release:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact-name: ghost-linux
+            executable-suffix: ""
+          - os: macos-latest
+            artifact-name: ghost-macos
+            executable-suffix: ""
+          - os: windows-latest
+            artifact-name: ghost-windows
+            executable-suffix: ".exe"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build executable
+        run: |
+          pyinstaller --name ghost \
+            --onefile \
+            --add-data "src/*:src" \
+            --hidden-import=openai \
+            --hidden-import=typer \
+            --hidden-import=rich \
+            --hidden-import=dotenv \
+            src/main.py
+
+      - name: Prepare artifacts (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p release
+          cp dist/ghost release/ghost
+          cp README.md release/
+          echo "OPENAI_API_KEY=your-api-key-here" > release/.env.example
+          tar -czf ghost-${{ matrix.artifact-name }}.tar.gz -C release .
+
+      - name: Prepare artifacts (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          mkdir release
+          copy dist\ghost.exe release\ghost.exe
+          copy README.md release\
+          echo OPENAI_API_KEY=your-api-key-here > release\.env.example
+          7z a ghost-${{ matrix.artifact-name }}.zip .\release\*
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.artifact-name }}
+          path: |
+            ghost-${{ matrix.artifact-name }}.tar.gz
+            ghost-${{ matrix.artifact-name }}.zip
+          retention-days: 5
+
+  create-release:
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Create the release
+          gh release create ${{ github.ref_name }} \
+            --title "Ghost CLI ${{ steps.version.outputs.version }}" \
+            --notes "## Ghost CLI ${{ steps.version.outputs.version }}
+          
+          An AI-powered CLI assistant that converts natural language into executable shell commands.
+          
+          ### Installation
+          
+          1. Download the appropriate package for your operating system below
+          2. Extract the archive
+          3. Set your OpenAI API key in the \`.env\` file or as an environment variable
+          4. Run \`./ghost \"your natural language command\"\`
+          
+          ### Platform Support
+          
+          - **Linux**: \`ghost-linux.tar.gz\`
+          - **macOS**: \`ghost-macos.tar.gz\` 
+          - **Windows**: \`ghost-windows.zip\`" \
+            artifacts/ghost-linux/ghost-ghost-linux.tar.gz#ghost-linux.tar.gz \
+            artifacts/ghost-macos/ghost-ghost-macos.tar.gz#ghost-macos.tar.gz \
+            artifacts/ghost-windows/ghost-ghost-windows.zip#ghost-windows.zip 
